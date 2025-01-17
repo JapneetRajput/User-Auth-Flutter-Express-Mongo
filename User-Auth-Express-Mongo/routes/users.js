@@ -11,7 +11,6 @@ import {
 } from "../controller/users.js";
 
 router.post("/create", createUser);
-router.post("/send-otp", sendOTP);
 router.post("/verify-otp", verifyOTP);
 router.post("/update-user-info", updateUserInfo);
 router.get("/:id", getUser);
