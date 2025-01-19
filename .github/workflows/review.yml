@@ -94,7 +94,6 @@ jobs:
                 echo "lineNo. range:$LINE_RANGE"
                 echo "code chunk:"
                 echo "$CODE_CHUNK"
-                echo "code chunk: $CODE_CHUNK"
               done <<< "$CHUNKS"
             done
 
