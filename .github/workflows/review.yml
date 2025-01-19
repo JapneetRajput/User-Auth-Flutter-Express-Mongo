@@ -21,6 +21,12 @@ jobs:
         run: |
           # Get a list of files modified in the pull request
           MODIFIED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+
+          if [ -z "$MODIFIED_FILES" ]; then
+            echo "No modified files found."
+            exit 0
+          fi
+
           echo "Modified files: $MODIFIED_FILES"
 
           # Iterate through each modified file to process changes
@@ -49,6 +55,12 @@ jobs:
         run: |
           # Get the list of modified files
           MODIFIED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+
+          if [ -z "$MODIFIED_FILES" ]; then
+            echo "No modified files to fetch."
+            exit 0
+          fi
+
           for file in $MODIFIED_FILES; do
             echo "Fetching full content of file: $file"
             # Output the full content of each modified file for context
