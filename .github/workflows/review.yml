@@ -3,56 +3,41 @@ name: PR Code Review with LLM
 on:
   pull_request:
     branches:
-      - main # Trigger workflow only for pull requests targeting the 'main' branch
-    types: [opened, synchronize] # Run workflow when a PR is opened or updated
+      - main
+    types: [opened, synchronize]
 
 jobs:
   fetch-code:
-    runs-on: ubuntu-latest # Use the latest Ubuntu runner for the job
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3 # Checkout the repository code
+        uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # Fetch the entire repository history for complete context
+          fetch-depth: 0
 
       - name: Get modified files with line numbers and code chunks
         id: modified_files
         run: |
-          # Ensure base commit and head commit are available
-          if [ -z "${{ github.event.before }}" ]; then
-            echo "Base commit (before) is not available. Using the default branch as the base."
-            BASE_REF=$(git rev-parse origin/main)
-          else
-            BASE_REF=${{ github.event.before }}
-          fi
-
+          BASE_REF=${{ github.event.before }}
           HEAD_REF=${{ github.sha }}
 
-          # Get a list of files modified in the pull request
-          MODIFIED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
+          if [ -z "$BASE_REF" ]; then
+            echo "Base commit (before) is not available. Using the default branch as the base."
+            BASE_REF=$(git rev-parse origin/main)
+          fi
 
+          MODIFIED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
           if [ -z "$MODIFIED_FILES" ]; then
             echo "No modified files found."
             exit 0
           fi
 
-          echo "Modified files: $MODIFIED_FILES"
-
-          # Iterate through each modified file to process changes
           for file in $MODIFIED_FILES; do
-            echo "Processing file: $file"
-            # Extract change metadata (line ranges) from diff headers
             CHUNKS=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | grep "^@@" | sed 's/@@ //g' | awk '{print $1, $2}')
-
-            # Loop through each chunk of changes in the file
             while IFS= read -r chunk; do
-              # Extract the line number range from the diff chunk
               LINE_RANGE=$(echo $chunk | awk '{print $2}' | sed 's/,/-/' | sed 's/+//')
-              # Extract the actual code changes for the chunk
               CODE_CHUNK=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | sed -n "/@@ $chunk @@/,/^@@/p" | grep "^+")
-
-              # Print the file name, line range, and code chunk for review
               echo "fileName:$file"
               echo "lineNo. range:$LINE_RANGE"
               echo "code chunk:"
@@ -63,19 +48,14 @@ jobs:
       - name: Fetch entire files with modifications
         id: entire_files
         run: |
-          # Ensure base commit and head commit are available
-          if [ -z "${{ github.event.before }}" ]; then
-            echo "Base commit (before) is not available. Using the default branch as the base."
-            BASE_REF=$(git rev-parse origin/main)
-          else
-            BASE_REF=${{ github.event.before }}
-          fi
-
+          BASE_REF=${{ github.event.before }}
           HEAD_REF=${{ github.sha }}
 
-          # Get the list of modified files
-          MODIFIED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
+          if [ -z "$BASE_REF" ]; then
+            BASE_REF=$(git rev-parse origin/main)
+          fi
 
+          MODIFIED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
           if [ -z "$MODIFIED_FILES" ]; then
             echo "No modified files to fetch."
             exit 0
@@ -83,22 +63,47 @@ jobs:
 
           for file in $MODIFIED_FILES; do
             echo "Fetching full content of file: $file"
-            # Output the full content of each modified file for context
             cat $file
           done
 
       - name: Pass data to Python script
         id: process_data
         run: |
-          # Combine output from both steps and pipe to Python script
           {
             echo "Modified files and chunks from diff:";
             echo "===============================";
             echo "Modified files with line numbers and code chunks:";
-            ./fetch-code/modified_files.sh
+            BASE_REF=${{ github.event.before }}
+            HEAD_REF=${{ github.sha }}
+
+            if [ -z "$BASE_REF" ]; then
+              BASE_REF=$(git rev-parse origin/main)
+            fi
+
+            MODIFIED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
+            if [ -z "$MODIFIED_FILES" ]; then
+              exit 0
+            fi
+
+            for file in $MODIFIED_FILES; do
+              CHUNKS=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | grep "^@@" | sed 's/@@ //g' | awk '{print $1, $2}')
+              while IFS= read -r chunk; do
+                LINE_RANGE=$(echo $chunk | awk '{print $2}' | sed 's/,/-/' | sed 's/+//')
+                CODE_CHUNK=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | sed -n "/@@ $chunk @@/,/^@@/p" | grep "^+")
+                echo "fileName:$file"
+                echo "lineNo. range:$LINE_RANGE"
+                echo "code chunk:"
+                echo "$CODE_CHUNK"
+                echo "code chunk: $CODE_CHUNK"
+              done <<< "$CHUNKS"
+            done
+
             echo "===============================";
             echo "Entire modified files for context:";
-            ./fetch-code/entire_files.sh
+            for file in $MODIFIED_FILES; do
+              echo "Fetching full content of file: $file"
+              cat $file
+            done
           } | python3 .github/scripts/process_modified_files.py
 
         env:
