@@ -19,8 +19,18 @@ jobs:
       - name: Get modified files with line numbers and code chunks
         id: modified_files
         run: |
+          # Ensure base commit and head commit are available
+          if [ -z "${{ github.event.before }}" ]; then
+            echo "Base commit (before) is not available. Using the default branch as the base."
+            BASE_REF=$(git rev-parse origin/main)
+          else
+            BASE_REF=${{ github.event.before }}
+          fi
+
+          HEAD_REF=${{ github.sha }}
+
           # Get a list of files modified in the pull request
-          MODIFIED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          MODIFIED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
 
           if [ -z "$MODIFIED_FILES" ]; then
             echo "No modified files found."
@@ -33,14 +43,14 @@ jobs:
           for file in $MODIFIED_FILES; do
             echo "Processing file: $file"
             # Extract change metadata (line ranges) from diff headers
-            CHUNKS=$(git diff -U0 ${{ github.event.before }} ${{ github.sha }} -- $file | grep "^@@" | sed 's/@@ //g' | awk '{print $1, $2}')
+            CHUNKS=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | grep "^@@" | sed 's/@@ //g' | awk '{print $1, $2}')
 
             # Loop through each chunk of changes in the file
             while IFS= read -r chunk; do
               # Extract the line number range from the diff chunk
               LINE_RANGE=$(echo $chunk | awk '{print $2}' | sed 's/,/-/' | sed 's/+//')
               # Extract the actual code changes for the chunk
-              CODE_CHUNK=$(git diff -U0 ${{ github.event.before }} ${{ github.sha }} -- $file | sed -n "/@@ $chunk @@/,/^@@/p" | grep "^+")
+              CODE_CHUNK=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | sed -n "/@@ $chunk @@/,/^@@/p" | grep "^+")
 
               # Print the file name, line range, and code chunk for review
               echo "fileName:$file"
@@ -53,8 +63,18 @@ jobs:
       - name: Fetch entire files with modifications
         id: entire_files
         run: |
+          # Ensure base commit and head commit are available
+          if [ -z "${{ github.event.before }}" ]; then
+            echo "Base commit (before) is not available. Using the default branch as the base."
+            BASE_REF=$(git rev-parse origin/main)
+          else
+            BASE_REF=${{ github.event.before }}
+          fi
+
+          HEAD_REF=${{ github.sha }}
+
           # Get the list of modified files
-          MODIFIED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          MODIFIED_FILES=$(git diff --name-only $BASE_REF $HEAD_REF)
 
           if [ -z "$MODIFIED_FILES" ]; then
             echo "No modified files to fetch."
