@@ -99,7 +99,7 @@ jobs:
             echo "===============================";
             echo "Entire modified files for context:";
             ./fetch-code/entire_files.sh
-          } | python3 scripts/process_modified_files.py
+          } | python3 .github/scripts/process_modified_files.py
 
         env:
           GITHUB_EVENT_BEFORE: "${{ github.event.before }}"
