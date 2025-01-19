@@ -1,0 +1,56 @@
+name: PR Code Review with LLM
+
+on:
+  pull_request:
+    branches:
+      - main # Trigger workflow only for pull requests targeting the 'main' branch
+    types: [opened, synchronize] # Run workflow when a PR is opened or updated
+
+jobs:
+  fetch-code:
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner for the job
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # Checkout the repository code
+        with:
+          fetch-depth: 0 # Fetch the entire repository history for complete context
+
+      - name: Get modified files with line numbers and code chunks
+        id: modified_files
+        run: |
+          # Get a list of files modified in the pull request
+          MODIFIED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "Modified files: $MODIFIED_FILES"
+
+          # Iterate through each modified file to process changes
+          for file in $MODIFIED_FILES; do
+            echo "Processing file: $file"
+            # Extract change metadata (line ranges) from diff headers
+            CHUNKS=$(git diff -U0 ${{ github.event.before }} ${{ github.sha }} -- $file | grep "^@@" | sed 's/@@ //g' | awk '{print $1, $2}')
+
+            # Loop through each chunk of changes in the file
+            while IFS= read -r chunk; do
+              # Extract the line number range from the diff chunk
+              LINE_RANGE=$(echo $chunk | awk '{print $2}' | sed 's/,/-/' | sed 's/+//')
+              # Extract the actual code changes for the chunk
+              CODE_CHUNK=$(git diff -U0 ${{ github.event.before }} ${{ github.sha }} -- $file | sed -n "/@@ $chunk @@/,/^@@/p" | grep "^+")
+
+              # Print the file name, line range, and code chunk for review
+              echo "fileName:$file"
+              echo "lineNo. range:$LINE_RANGE"
+              echo "code chunk:"
+              echo "$CODE_CHUNK"
+            done <<< "$CHUNKS"
+          done
+
+      - name: Fetch entire files with modifications
+        id: entire_files
+        run: |
+          # Get the list of modified files
+          MODIFIED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          for file in $MODIFIED_FILES; do
+            echo "Fetching full content of file: $file"
+            # Output the full content of each modified file for context
+            cat $file
+          done
