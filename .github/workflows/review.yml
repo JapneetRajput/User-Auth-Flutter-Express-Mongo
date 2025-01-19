@@ -86,3 +86,21 @@ jobs:
             # Output the full content of each modified file for context
             cat $file
           done
+
+      - name: Pass data to Python script
+        id: process_data
+        run: |
+          # Combine output from both steps and pipe to Python script
+          {
+            echo "Modified files and chunks from diff:";
+            echo "===============================";
+            echo "Modified files with line numbers and code chunks:";
+            ./fetch-code/modified_files.sh
+            echo "===============================";
+            echo "Entire modified files for context:";
+            ./fetch-code/entire_files.sh
+          } | python3 process_modified_files.py
+
+        env:
+          GITHUB_EVENT_BEFORE: "${{ github.event.before }}"
+          GITHUB_SHA: "${{ github.sha }}"
