@@ -86,6 +86,7 @@ def analyze_code(
 def create_review_comment(
     owner: str, repo: str, pull_number: int, comments: list, token: str
 ) -> None:
+    print(token)
     auth = Auth.Token(token)
     g = Github(auth=auth)
 
