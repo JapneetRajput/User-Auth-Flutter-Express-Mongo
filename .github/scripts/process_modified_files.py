@@ -1,5 +1,6 @@
 import sys
 import json
+import os
 
 def process_inputs():
     # Simulating input retrieval from GitHub Actions
@@ -8,18 +9,22 @@ def process_inputs():
 
     # Reading input from stdin (simulating GitHub Actions output piped here)
     data = sys.stdin.read()
-    
+
     current_file = None
     current_chunk = None
+    current_commit_id = None
 
     for line in data.splitlines():
-        if line.startswith("fileName:"):
+        if line.startswith("commitId:"):
+            current_commit_id = line.split("commitId:")[1].strip()
+        elif line.startswith("fileName:"):
             current_file = line.split("fileName:")[1].strip()
         elif line.startswith("lineNo. range:"):
             current_chunk = {
                 "lineRange": line.split("lineNo. range:")[1].strip(),
                 "fileName": current_file,
-                "codeChunk": ""
+                "codeChunk": "",
+                "commitId": current_commit_id
             }
             modified_chunks.append(current_chunk)
         elif line.startswith("code chunk:"):

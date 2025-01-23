@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get modified files with line numbers and code chunks
+      - name: Get modified files with line numbers, code chunks, and commit IDs
         id: modified_files
         run: |
           BASE_REF=${{ github.event.before }}
@@ -38,6 +38,8 @@ jobs:
             while IFS= read -r chunk; do
               LINE_RANGE=$(echo $chunk | awk '{print $2}' | sed 's/,/-/' | sed 's/+//')
               CODE_CHUNK=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | sed -n "/@@ $chunk @@/,/^@@/p" | grep "^+")
+              COMMIT_ID=$(git log -n 1 --pretty=format:"%H" $file)
+              echo "commitId:$COMMIT_ID"
               echo "fileName:$file"
               echo "lineNo. range:$LINE_RANGE"
               echo "code chunk:"
@@ -72,7 +74,7 @@ jobs:
           {
             echo "Modified files and chunks from diff:";
             echo "===============================";
-            echo "Modified files with line numbers and code chunks:";
+            echo "Modified files with line numbers, code chunks, and commit IDs:";
             BASE_REF=${{ github.event.before }}
             HEAD_REF=${{ github.sha }}
 
@@ -90,6 +92,8 @@ jobs:
               while IFS= read -r chunk; do
                 LINE_RANGE=$(echo $chunk | awk '{print $2}' | sed 's/,/-/' | sed 's/+//')
                 CODE_CHUNK=$(git diff -U0 $BASE_REF $HEAD_REF -- $file | sed -n "/@@ $chunk @@/,/^@@/p" | grep "^+")
+                COMMIT_ID=$(git log -n 1 --pretty=format:"%H" $file)
+                echo "commitId:$COMMIT_ID"
                 echo "fileName:$file"
                 echo "lineNo. range:$LINE_RANGE"
                 echo "code chunk:"
