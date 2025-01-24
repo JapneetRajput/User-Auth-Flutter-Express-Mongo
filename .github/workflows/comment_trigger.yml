@@ -1,0 +1,21 @@
+name: PR Review Comment Listener
+
+on:
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  process-review-comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Process PR Review Comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Extract comment details
+          echo "Comment Author: ${{ github.event.comment.user.login }}"
+          echo "Comment Body: ${{ github.event.comment.body }}"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
