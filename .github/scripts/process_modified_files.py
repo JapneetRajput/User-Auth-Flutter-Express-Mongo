@@ -70,7 +70,7 @@ class CodeReviewProcessor:
             prompt = review_helper.create_prompt(file, chunk_data, self.pr_details)
 
             # Get AI review responses
-            ai_responses = review_helper.get_ai_response(prompt, api_key=self.groq_api_key)
+            ai_responses = review_helper.get_ai_response(prompt)
             print(ai_responses)
 
             if ai_responses:
