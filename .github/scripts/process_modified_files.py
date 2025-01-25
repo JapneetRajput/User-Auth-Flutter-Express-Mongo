@@ -66,13 +66,15 @@ def analyze_code(
 
         # Get AI review responses
         ai_responses = get_ai_response(prompt, api_key=groq_api_key)
-        print(ai_responses)
+        print('ai_responses',ai_responses)
 
         if ai_responses:
             # Create comments for GitHub PR
             comments = create_comment(file, chunk_data, ai_responses)
             all_comments.extend(comments)
 
+    print('all_comments',all_comments)
+    
     # Create GitHub review comments
     create_review_comment(
         owner=github_owner,
@@ -123,6 +125,8 @@ if __name__ == "__main__":
 
     # Get modified files and chunks
     modified_chunks, modified_files = process_inputs()
+
+    print('modified_chunks',modified_chunks)
 
     # Analyze code and create review
     analyze_code(
