@@ -108,7 +108,7 @@ def create_review_comment(
         if file_diff:
             pull_request.create_review_comment(
                 body=comment["body"],
-                commit_id=last_commit.sha,
+                commit=last_commit.sha,
                 path=file_diff.filename,
                 line=comment.get("line", 1),
                 side="RIGHT",
