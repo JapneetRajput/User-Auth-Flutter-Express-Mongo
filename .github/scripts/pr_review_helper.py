@@ -56,6 +56,7 @@ def get_ai_response(
         )
 
         res = response.choices[0].message.content.strip() or "{}"
+        print('res',res)
         return json.loads(res).get("reviews", [])
     except Exception as error:
         print(f"Error: {error}")
