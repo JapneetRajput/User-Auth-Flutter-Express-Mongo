@@ -99,21 +99,13 @@ def create_review_comment(
     last_commit = commits[-1]
 
     for comment in comments:
-        # Fetch the diff for the specific file
-        diff = pull_request.get_files()
-        file_diff = next(
-            (f for f in diff if f.filename == comment["path"]), None
+        pull_request.create_review_comment(
+            body=comment["body"],
+            commit=last_commit,
+            path=comment["path"],
+            line=comment["line"],
         )
 
-        if file_diff:
-            pull_request.create_review_comment(
-                body=comment["body"],
-                commit=last_commit.sha,
-                path=file_diff.filename,
-                line=comment.get("line", 1),
-                side="RIGHT",
-                diff_hunk=file_diff.patch,  # Add the entire file patch
-            )
 
 if __name__ == "__main__":
     # Get environment variables
