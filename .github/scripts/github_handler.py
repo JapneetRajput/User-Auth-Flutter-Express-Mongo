@@ -7,7 +7,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-
+#sample comment to test
 class GitHubPRHandler:
     def __init__(self, token: str):
         self.auth = Auth.Token(token)
