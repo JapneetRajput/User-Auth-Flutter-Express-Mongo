@@ -53,20 +53,30 @@ class AIReviewHelper:
         """
         client = Groq(api_key=self.api_key)
 
-        try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "system", "content": prompt}],
-                temperature=0.2,
-                max_tokens=700,
-                top_p=1,
-            )
+        while True:  # Keep retrying until a valid, non-empty response is obtained
+            try:
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "system", "content": prompt}],
+                    temperature=0.2,
+                    max_tokens=700,
+                    top_p=1,
+                )
 
-            res = response.choices[0].message.content.strip() or "{}"
-            return json.loads(res).get("reviews", [])
-        except Exception as error:
-            print(f"Error: {error}")
-            return None
+                # Parse the response content
+                res = response.choices[0].message.content.strip()
+                if res:  # If response is non-empty, attempt to parse it as JSON
+                    try:
+                        parsed_res = json.loads(res)
+                        return parsed_res.get("reviews", [])
+                    except json.JSONDecodeError:
+                        print("Error: Failed to parse AI response as JSON.")
+                        return []
+
+                print("Warning: Received an empty response, retrying...")
+            except Exception as error:
+                print(f"Error while fetching AI response: {error}")
+                return None
 
     def create_comment(
         self,
