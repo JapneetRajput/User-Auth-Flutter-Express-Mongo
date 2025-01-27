@@ -121,7 +121,7 @@ jobs:
               echo "Fetching full content of file: $file"
               cat $file
             done
-          } | python3 .github/scripts/process_modified_files.py
+          } | python3 .github/scripts/CodeReviewProcessor.py
 
         env:
           GITHUB_EVENT_BEFORE: "${{ github.event.before }}"
