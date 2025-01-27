@@ -1,32 +1,32 @@
 name: Generate Code Guidelines
 
 on:
-  workflow_dispatch # Allows manual triggering
+  workflow_dispatch: # Allows manual triggering of the workflow
 
 jobs:
   fetch-comments-and-generate-guidelines:
-  runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
 
-  steps:
-  - name: Checkout repository
-    uses: actions/checkout@v3
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-  - name: Set up Python
-    uses: actions/setup-python@v4
-    with:
-      python-version: "3.10"
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
 
-  - name: Install dependancies
-    run: pip install requests pygithub groq
+    - name: Install dependencies
+      run: pip install requests pygithub groq
 
-  - name: Fetch PR Comments and Generate Guidelines
-    env:
-        GITHUB_SHA: "${{ github.sha }}"
-        GITHUB_OWNER: "${{ github.repository_owner }}"
-        GITHUB_REPO: "${{ github.event.repository.name }}"
-        GITHUB_PR_NUMBER: "${{ github.event.pull_request.number }}"
-        GITHUB_PR_TITLE: "${{ github.event.pull_request.title }}"
-        GITHUB_PR_DESCRIPTION: "${{ github.event.pull_request.body }}"
-        GROQ_API_KEY: "${{ secrets.GROQ_API_KEY }}"
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-    run: python scripts/fetch_pr_comments.py
+    - name: Fetch PR Comments and Generate Guidelines
+      env:
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_OWNER: ${{ github.repository_owner }}
+        GITHUB_REPO: ${{ github.event.repository.name }}
+        GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+        GITHUB_PR_TITLE: ${{ github.event.pull_request.title }}
+        GITHUB_PR_DESCRIPTION: ${{ github.event.pull_request.body }}
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python scripts/FetchCommet.py
