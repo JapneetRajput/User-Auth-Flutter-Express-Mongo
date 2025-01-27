@@ -28,7 +28,9 @@ class FetchComments:
         """
         try:
             repository = self.github.get_repo(f"{self.github_owner}/{self.github_repo}")
+            print(f"repo: {repository}")
             pull_requests = repository.get_pulls(state="all")
+            print(f" PRS: {pull_requests}")
             logging.info(
                 f"Found {pull_requests.totalCount} pull requests in the repository {self.github_owner}/{self.github_repo}"
             )
@@ -108,6 +110,7 @@ if __name__ == "__main__":
         groq_api_key = os.environ.get("GROQ_API_KEY")
         github_owner = os.environ.get("GITHUB_OWNER")
         github_repo = os.environ.get("GITHUB_REPO")
+        logging.info(f"github token:{github_token} github owner: {github_owner} github repo: {github_repo}")
 
         if not all([github_token, groq_api_key, github_owner, github_repo]):
             raise ValueError("Missing one or more required environment variables.")
