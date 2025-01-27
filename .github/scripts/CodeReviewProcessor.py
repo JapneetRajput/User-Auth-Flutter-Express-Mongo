@@ -4,8 +4,8 @@ import os
 from github import Github, Auth
 from groq import Groq
 
-from pr_review_helper import AIReviewHelper
-from github_handler import GitHubPRHandler
+from AIReviewHelper import AIReviewHelper
+from GitHubPRHandler import GitHubPRHandler
 
 
 class CodeReviewProcessor:
