@@ -3,6 +3,9 @@ name: Generate Code Guidelines
 on:
   workflow_dispatch: # Allows manual triggering of the workflow
 
+permissions:
+  contents: read
+
 jobs:
   fetch-comments-and-generate-guidelines:
     runs-on: ubuntu-latest
