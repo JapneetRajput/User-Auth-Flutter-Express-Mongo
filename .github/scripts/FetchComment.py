@@ -104,7 +104,7 @@ class FetchComments:
 if __name__ == "__main__":
     try:
         # Replace these with your actual environment variables
-        github_token = os.environ.get("GITHUB_TOKEN")
+        github_token = "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"
         groq_api_key = os.environ.get("GROQ_API_KEY")
         github_owner = os.environ.get("GITHUB_OWNER")
         github_repo = os.environ.get("GITHUB_REPO")
