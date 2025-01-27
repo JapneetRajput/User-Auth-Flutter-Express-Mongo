@@ -3,8 +3,6 @@ from groq import Client  # Ensure Groq is installed and imported properly
 from github.GithubException import GithubException
 from typing import Optional, List, Dict
 import logging
-import sys
-import json
 import os
 
 # Configure logging
@@ -65,7 +63,6 @@ class FetchComments:
         if not self.api_key:
             raise ValueError("API key is required to generate guidelines.")
 
-
         client = Client(api_key=self.api_key)
         all_comments = "\n".join(
             [
@@ -86,6 +83,20 @@ class FetchComments:
         )
         return response.choices[0].message.content.strip()
 
+    @staticmethod
+    def update_readme(guidelines: str, readme_file: str = "README.md"):
+        """
+        Updates the README file with the generated guidelines.
+        """
+        try:
+            with open(readme_file, "a") as readme:
+                readme.write("\n\n## Coding Guidelines\n")
+                readme.write(guidelines)
+            logging.info(f"Guidelines successfully appended to {readme_file}.")
+        except FileNotFoundError:
+            logging.error(f"README file not found: {readme_file}")
+            raise
+
 
 if __name__ == "__main__":
     try:
@@ -104,12 +115,9 @@ if __name__ == "__main__":
         logging.info("Generating guidelines...")
         guidelines = fetch_comments.generate_guidelines(comments)
 
-        # Save the guidelines to a file
-        output_file = "generated_guidelines.txt"
-        with open(output_file, "w") as f:
-            f.write(guidelines)
+        logging.info("Updating README file...")
+        fetch_comments.update_readme(guidelines)
 
-        logging.info(f"Guidelines generated and saved to {output_file}.")
     except Exception as e:
         logging.error(f"An error occurred: {e}")
         raise
