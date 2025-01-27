@@ -13,24 +13,24 @@ logging.basicConfig(
 
 class FetchComments:
     def __init__(
-        self, token: str, api_key: Optional[str] = None, model: str = "llama-3.3-70b-versatile"
+        self, github_token: str, groq_api_key: str, github_owner: str, github_repo: str, model: str = "llama-3.3-70b-versatile"
     ):
-        self.auth = Auth.Token(token)
+        self.auth = Auth.Token(github_token)
         self.github = Github(auth=self.auth)
-        self.api_key = api_key
+        self.api_key = groq_api_key
         self.model = model
+        self.github_owner = github_owner
+        self.github_repo = github_repo
 
-    def get_all_pull_request_comments(
-        self, owner: str, repo: str
-    ) -> List[Dict[str, str | int]]:
+    def get_all_pull_request_comments(self) -> List[Dict[str, str | int]]:
         """
         Fetches all comments from all pull requests (open or closed) in the repository.
         """
         try:
-            repository = self.github.get_repo(f"{owner}/{repo}")
+            repository = self.github.get_repo(f"{self.github_owner}/{self.github_repo}")
             pull_requests = repository.get_pulls(state="all")
             logging.info(
-                f"Found {pull_requests.totalCount} pull requests in the repository {owner}/{repo}"
+                f"Found {pull_requests.totalCount} pull requests in the repository {self.github_owner}/{self.github_repo}"
             )
 
             all_comments = []
@@ -89,27 +89,38 @@ class FetchComments:
         Updates the README file with the generated guidelines.
         """
         try:
+            if not os.path.exists(readme_file):
+                raise FileNotFoundError(f"README file not found: {readme_file}")
+
             with open(readme_file, "a") as readme:
                 readme.write("\n\n## Coding Guidelines\n")
                 readme.write(guidelines)
             logging.info(f"Guidelines successfully appended to {readme_file}.")
-        except FileNotFoundError:
-            logging.error(f"README file not found: {readme_file}")
+        except FileNotFoundError as e:
+            logging.error(str(e))
             raise
 
 
 if __name__ == "__main__":
     try:
-        # Replace these with your actual values
+        # Replace these with your actual environment variables
         github_token = os.environ.get("GITHUB_TOKEN")
         groq_api_key = os.environ.get("GROQ_API_KEY")
         github_owner = os.environ.get("GITHUB_OWNER")
         github_repo = os.environ.get("GITHUB_REPO")
 
-        fetch_comments = FetchComments(token=github_token, api_key=groq_api_key)
+        if not all([github_token, groq_api_key, github_owner, github_repo]):
+            raise ValueError("Missing one or more required environment variables.")
+
+        fetch_comments = FetchComments(
+            github_token=github_token,
+            groq_api_key=groq_api_key,
+            github_owner=github_owner,
+            github_repo=github_repo,
+        )
 
         logging.info("Fetching comments from pull requests...")
-        comments = fetch_comments.get_all_pull_request_comments(github_owner, github_repo)
+        comments = fetch_comments.get_all_pull_request_comments()
         logging.info(f"Fetched {len(comments)} comments from pull requests.")
 
         logging.info("Generating guidelines...")
