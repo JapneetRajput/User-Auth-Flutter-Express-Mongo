@@ -4,6 +4,9 @@ import randomstring from "randomstring";
 
 // Function to send OTP
 export const sendOTP = async (req, res) => {
+  let v1;
+  let v2;
+  let v3;
   try {
     const { email } = req.body;
     // Generate OTP
