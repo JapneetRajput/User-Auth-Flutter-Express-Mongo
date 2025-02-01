@@ -119,6 +119,17 @@ class GuidelineManager:
                     top_p=1,
                 )
                 response_text = response.choices[0].message.content.strip()
+                
+                # Remove markdown code block formatting if present
+                if response_text.startswith("```"):
+                    # Split into lines and remove the first and last lines if they're code block markers
+                    lines = response_text.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    response_text = "\n".join(lines).strip()
+                
                 result = json.loads(response_text)
                 # Validate that the required keys exist
                 required_keys = {"exists", "similar_to", "new_guideline"}
