@@ -30,7 +30,8 @@ class GuidelineManager:
         if self.local_repo_path.exists():
             subprocess.run(["rm", "-rf", str(self.local_repo_path)], check=True)
 
-        repo_url = f"https://{os.environ['GITHUB_TOKEN']}@github.com/{self.github_owner}/{self.github_repo}.git"
+        # Use the x-access-token format for the URL
+        repo_url = f"https://x-access-token:{os.environ['GITHUB_TOKEN']}@github.com/{self.github_owner}/{self.github_repo}.git"
         subprocess.run(["git", "clone", "--branch", self.guidelines_branch, repo_url, str(self.local_repo_path)], check=True)
 
     def load_guidelines(self):
