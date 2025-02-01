@@ -124,6 +124,7 @@ if __name__ == "__main__":
         logging.info("Fetching comments from pull requests...")
         comments = fetch_comments.get_all_pull_request_comments()
         logging.info(f"Fetched {len(comments)} comments from pull requests.")
+        logging.info(comments)
 
         logging.info("Generating guidelines...")
         guidelines = fetch_comments.generate_guidelines(comments)
