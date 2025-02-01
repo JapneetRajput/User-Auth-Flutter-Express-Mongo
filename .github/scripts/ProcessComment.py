@@ -39,18 +39,28 @@ class GuidelineManager:
         guidelines_path = self.local_repo_path / self.guidelines_file
         if not guidelines_path.exists():
             logging.info("No existing guidelines found, initializing an empty list.")
-            return []
+            return []  # Return an empty list if file doesn't exist
 
         with open(guidelines_path, "r") as f:
-            return json.load(f)
+            data = json.load(f)
+            # If data is a dictionary with a 'guidelines' key, extract the list.
+            if isinstance(data, dict) and "guidelines" in data:
+                return data["guidelines"]
+            # If data is already a list, return it.
+            elif isinstance(data, list):
+                return data
+            else:
+                logging.info("Unexpected data format for guidelines. Initializing empty list.")
+                return []
 
     def save_guidelines(self, guidelines):
         """Save the updated guidelines and push them back to the branch."""
         guidelines_path = self.local_repo_path / self.guidelines_file
         guidelines_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Save the guidelines as a dictionary with key "guidelines"
         with open(guidelines_path, "w") as f:
-            json.dump(guidelines, f, indent=4)
+            json.dump({"guidelines": guidelines}, f, indent=4)
 
         logging.info("Committing and pushing updates to the guidelines branch...")
         subprocess.run(["git", "-C", str(self.local_repo_path), "add", str(self.guidelines_file)], check=True)
