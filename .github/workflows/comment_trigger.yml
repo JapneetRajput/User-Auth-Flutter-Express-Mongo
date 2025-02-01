@@ -8,10 +8,12 @@ jobs:
   process-review-comment:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PR branch
+      - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: List repository structure (debug)
+        run: |
+          ls -R .
 
       - name: Setup Python
         uses: actions/setup-python@v4
