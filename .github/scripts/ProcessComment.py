@@ -85,7 +85,7 @@ class GuidelineManager:
             raise
 
     def check_guideline_exists(self, comment, guidelines):
-        """Use AI to check if the guideline already exists."""
+        """Use AI to check if the guideline already exists, retrying up to 5 times if needed."""
         prompt = f"""
         Existing guidelines:
         {json.dumps(guidelines, indent=2)}
@@ -105,14 +105,33 @@ class GuidelineManager:
             "new_guideline": string or null
         }}
         """
-        response = self.client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "Respond in JSON only."}, {"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=500,
-            top_p=1,
-        )
-        return json.loads(response.choices[0].message.content.strip())
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": "Respond in JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=500,
+                    top_p=1,
+                )
+                response_text = response.choices[0].message.content.strip()
+                result = json.loads(response_text)
+                # Validate that the required keys exist
+                required_keys = {"exists", "similar_to", "new_guideline"}
+                if required_keys.issubset(result.keys()):
+                    return result
+                else:
+                    print(f"Attempt {attempt}: JSON is missing required keys. Response: {result}")
+            except json.JSONDecodeError as e:
+                print(f"Attempt {attempt}: JSON decode error: {e}. Response text: {response_text}")
+            except Exception as e:
+                print(f"Attempt {attempt}: An error occurred: {e}")
+
+        raise Exception("Failed to get valid JSON response after 5 attempts")
 
     @staticmethod
     def get_github_event():
