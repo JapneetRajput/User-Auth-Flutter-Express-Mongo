@@ -129,6 +129,7 @@ if __name__ == "__main__":
         logging.info("Generating guidelines...")
         guidelines = fetch_comments.generate_guidelines(comments)
 
+        logging.info(guidelines)
         logging.info("Updating README file...")
         fetch_comments.update_readme(guidelines)
 
