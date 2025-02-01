@@ -1,69 +1,65 @@
 from github import Github, Auth
 from groq import Client
 from github.GithubException import GithubException
-from typing import Optional, List, Dict
 import json
-import logging
 import os
-from pathlib import Path
 import subprocess
+import logging
+from pathlib import Path
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class GuidelineManager:
-    def __init__(
-        self,
-        github_token: str,
-        groq_api_key: str,
-        github_owner: str,
-        github_repo: str
-    ):
+    def __init__(self, github_token, groq_api_key, github_owner, github_repo):
         self.auth = Auth.Token(github_token)
         self.github = Github(auth=self.auth)
         self.client = Client(api_key=groq_api_key)
         self.github_owner = github_owner
         self.github_repo = github_repo
-        self.wiki_url = f"https://{github_token}@github.com/{github_owner}/{github_repo}.wiki.git"
-        self.wiki_path = Path("wiki")
-        self.guidelines_file = self.wiki_path / "Guidelines.md"
+        self.repo = self.github.get_repo(f"{github_owner}/{github_repo}")
 
-    def clone_wiki(self):
-        """Clone the GitHub Wiki repository."""
-        if self.wiki_path.exists():
-            subprocess.run(["rm", "-rf", str(self.wiki_path)], check=True)
-        
-        logging.info("Cloning the GitHub Wiki repository...")
-        subprocess.run(["git", "clone", self.wiki_url, str(self.wiki_path)], check=True)
+        # Branch & File Details
+        self.guidelines_branch = "guidelines"
+        self.guidelines_file = Path(".github/guidelines/guidelines.json")
+        self.local_repo_path = Path("repo")
 
-    def load_guidelines(self) -> List[str]:
-        """Load existing guidelines from the Wiki."""
-        if not self.guidelines_file.exists():
-            logging.info("No existing guidelines found in Wiki, initializing an empty list.")
+    def clone_guidelines_branch(self):
+        """Clone the guidelines branch."""
+        logging.info(f"Cloning the {self.guidelines_branch} branch...")
+        if self.local_repo_path.exists():
+            subprocess.run(["rm", "-rf", str(self.local_repo_path)], check=True)
+
+        repo_url = f"https://{os.environ['GITHUB_TOKEN']}@github.com/{self.github_owner}/{self.github_repo}.git"
+        subprocess.run(["git", "clone", "--branch", self.guidelines_branch, repo_url, str(self.local_repo_path)], check=True)
+
+    def load_guidelines(self):
+        """Load existing guidelines from the JSON file."""
+        guidelines_path = self.local_repo_path / self.guidelines_file
+        if not guidelines_path.exists():
+            logging.info("No existing guidelines found, initializing an empty list.")
             return []
 
-        with open(self.guidelines_file, "r") as f:
-            return [line.strip() for line in f.readlines() if line.strip()]
+        with open(guidelines_path, "r") as f:
+            return json.load(f)
 
-    def save_guidelines(self, guidelines: List[str]) -> None:
-        """Save updated guidelines to the Wiki."""
-        with open(self.guidelines_file, "w") as f:
-            f.write("\n".join(guidelines) + "\n")
+    def save_guidelines(self, guidelines):
+        """Save the updated guidelines and push them back to the branch."""
+        guidelines_path = self.local_repo_path / self.guidelines_file
+        guidelines_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logging.info("Committing and pushing updates to the Wiki...")
-        subprocess.run(["git", "-C", str(self.wiki_path), "add", "Guidelines.md"], check=True)
-        subprocess.run(["git", "-C", str(self.wiki_path), "commit", "-m", "Update guidelines based on PR comment"], check=True)
-        subprocess.run(["git", "-C", str(self.wiki_path), "push"], check=True)
+        with open(guidelines_path, "w") as f:
+            json.dump(guidelines, f, indent=4)
 
-    def process_comment(self) -> None:
-        """
-        Process the current PR comment and update guidelines if necessary.
-        """
+        logging.info("Committing and pushing updates to the guidelines branch...")
+        subprocess.run(["git", "-C", str(self.local_repo_path), "add", str(self.guidelines_file)], check=True)
+        subprocess.run(["git", "-C", str(self.local_repo_path), "commit", "-m", "Update guidelines based on PR comment"], check=True)
+        subprocess.run(["git", "-C", str(self.local_repo_path), "push"], check=True)
+
+    def process_comment(self):
+        """Process the PR comment and update guidelines if necessary."""
         try:
-            self.clone_wiki()
+            self.clone_guidelines_branch()
             guidelines = self.load_guidelines()
 
             event = self.get_github_event()
@@ -71,50 +67,42 @@ class GuidelineManager:
                 logging.error("No GitHub event context found")
                 return
 
-            comment = {
-                "pr_number": event["pull_request"]["number"],
-                "comment_body": event["comment"]["body"],
-                "user": event["comment"]["user"]["login"],
-            }
+            comment = event["comment"]["body"]
+            result = self.check_guideline_exists(comment, guidelines)
 
-            # Check if comment suggests a new guideline
-            result = self.check_guideline_exists(comment)
-            if not result.get("exists"):
-                if new_guideline := result.get("new_guideline"):
+            if not result["exists"]:
+                new_guideline = result["new_guideline"]
+                if new_guideline:
                     guidelines.append(new_guideline)
                     self.save_guidelines(guidelines)
                     logging.info(f"Added new guideline: {new_guideline}")
             else:
-                logging.info(f"Similar to existing guideline: {result.get('similar_to')}")
+                logging.info(f"Similar to existing guideline: {result['similar_to']}")
 
         except Exception as e:
             logging.error(f"Failed to process comment: {e}")
             raise
 
-    def check_guideline_exists(self, comment: Dict[str, str]) -> Dict:
-        """Ask Groq LLM to check if the guideline already exists in some form."""
-        guidelines = self.load_guidelines()
+    def check_guideline_exists(self, comment, guidelines):
+        """Use AI to check if the guideline already exists."""
         prompt = f"""
-        You are a code review assistant. Your task is to analyze a comment and existing guidelines.
-
         Existing guidelines:
         {json.dumps(guidelines, indent=2)}
 
-        New comment to analyze:
-        {comment["comment_body"]}
+        New comment:
+        {comment}
 
         Instructions:
-        1. Compare the comment against existing guidelines.
-        2. Determine if it suggests a new guideline or matches an existing one.
-        3. Respond ONLY with a JSON object in the exact format:
+        - Compare the comment against existing guidelines.
+        - If it suggests a new guideline, return it.
+        - If it matches an existing guideline, return the match.
 
+        Respond in JSON:
         {{
             "exists": boolean,
             "similar_to": string or null,
             "new_guideline": string or null
         }}
-
-        DO NOT include any explanations outside the JSON structure.
         """
         response = self.client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -123,12 +111,11 @@ class GuidelineManager:
             max_tokens=500,
             top_p=1,
         )
-        response_text = response.choices[0].message.content.strip()
-        return json.loads(response_text)
+        return json.loads(response.choices[0].message.content.strip())
 
     @staticmethod
-    def get_github_event() -> Optional[Dict]:
-        """Get GitHub event context from environment."""
+    def get_github_event():
+        """Load GitHub event context."""
         try:
             with open(os.environ["GITHUB_EVENT_PATH"], "r") as f:
                 return json.load(f)
@@ -138,22 +125,12 @@ class GuidelineManager:
 
 if __name__ == "__main__":
     try:
-        github_token = os.environ.get("GITHUB_TOKEN")
-        groq_api_key = os.environ.get("GROQ_API_KEY")
-        github_owner = os.environ.get("GITHUB_OWNER")
-        github_repo = os.environ.get("GITHUB_REPO")
+        github_token = os.environ["GITHUB_TOKEN"]
+        groq_api_key = os.environ["GROQ_API_KEY"]
+        github_owner = os.environ["GITHUB_OWNER"]
+        github_repo = os.environ["GITHUB_REPO"]
 
-        if not all([github_token, groq_api_key, github_owner, github_repo]):
-            raise ValueError("Missing one or more required environment variables.")
-
-        manager = GuidelineManager(
-            github_token=github_token,
-            groq_api_key=groq_api_key,
-            github_owner=github_owner,
-            github_repo=github_repo,
-        )
-
-        logging.info("Processing PR comment...")
+        manager = GuidelineManager(github_token, groq_api_key, github_owner, github_repo)
         manager.process_comment()
 
     except Exception as e:
