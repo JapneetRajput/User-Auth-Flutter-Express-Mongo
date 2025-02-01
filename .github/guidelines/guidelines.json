@@ -1,0 +1,8 @@
+{
+    "guidelines": [
+        "Never hardcode sensitive information like passwords or credentials - use environment variables instead",
+        "Use optional chaining operator (?.) or explicit checks when handling potentially null/undefined values",
+        "Use async/await with proper try-catch blocks instead of callbacks for asynchronous operations",
+        "Log errors internally and send generic error messages to clients for security"
+    ]
+}

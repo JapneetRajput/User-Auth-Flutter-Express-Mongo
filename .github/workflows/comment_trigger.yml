@@ -11,11 +11,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install groq PyGithub
+
       - name: Process PR Review Comment
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.repository.name }}
         run: |
-          # Extract comment details
-          echo "Comment Author: ${{ github.event.comment.user.login }}"
-          echo "Comment Body: ${{ github.event.comment.body }}"
-          echo "PR Number: ${{ github.event.pull_request.number }}"
+          python .github/scripts/ProcessComment.py
+
+      - name: Commit and Push if changes exist
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add guidelines.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update guidelines based on PR comment feedback" && git push)
