@@ -45,7 +45,6 @@ class FetchComments:
                             "pr_title": pr.title,
                             "comment_body": comment.body,
                             "comment_path": comment.path,
-                            "line": comment.position,
                             "user": comment.user.login,
                             "pr_state": pr.state,
                         }
