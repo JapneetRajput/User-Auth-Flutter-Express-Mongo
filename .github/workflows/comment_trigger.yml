@@ -8,8 +8,11 @@ jobs:
   process-review-comment:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout main branch
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Ensure full history is fetched
+          ref: main        # Always work on the main branch
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -30,13 +33,12 @@ jobs:
         run: |
           python .github/scripts/ProcessComment.py
 
-      - name: Commit and Push if changes exist
+      - name: Commit and Push if changes exist (Main Branch)
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          git checkout ${{ github.event.pull_request.head.ref }}
-      
+          git pull origin main  # Ensure we have the latest changes
+          
           git add .github/guidelines/guidelines.json
-          git commit -m "Ensure guidelines file exists" || echo "No changes to commit"
-          git push
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update global guidelines based on PR comment feedback" && git push origin main)
