@@ -20,7 +20,7 @@ class GuidelineManager:
         groq_api_key: str,
         github_owner: str,
         github_repo: str,
-        model: str = "llama2-70b-4096"
+        model: str = "llama-3.3-70b-versatile"
     ):
         self.auth = Auth.Token(github_token)
         self.github = Github(auth=self.auth)
