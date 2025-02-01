@@ -45,42 +45,90 @@ class GuidelineManager:
         self.guidelines_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.guidelines_path, 'w') as f:
             json.dump({"guidelines": guidelines}, f, indent=2)
-
+    
     def check_guideline_exists(self, comment: Dict[str, str]) -> Dict:
         """
         Ask Groq LLM to check if the guideline already exists in some form
         Returns: Dict with analysis results
         """
+        max_retries = 5
+        retry_count = 0
+
         try:
             guidelines = self.load_guidelines()
             
             prompt = f"""
-            Given these existing code quality guidelines:
+            You are a code review assistant. Your task is to analyze a comment and existing guidelines.
+            
+            Existing guidelines:
             {json.dumps(guidelines, indent=2)}
             
-            And this new code review comment:
+            New comment to analyze:
             {comment['comment_body']}
             
-            Task: Determine if this comment suggests a guideline that's already covered by the existing guidelines.
+            Instructions:
+            1. Compare the comment against existing guidelines
+            2. Determine if it suggests a new guideline or matches an existing one
+            3. Respond ONLY with a JSON object in the exact format shown below:
+
+            {{
+                "exists": boolean,
+                "similar_to": string or null,
+                "new_guideline": string or null
+            }}
+
+            Rules:
+            - 'exists' must be true if the guideline already exists, false otherwise
+            - 'similar_to' must contain the existing guideline text if exists is true, null otherwise
+            - 'new_guideline' must contain a new concise guideline if exists is false, null otherwise
+            - The response must be valid JSON with no additional text
+            - New guidelines should be brief and actionable, similar to existing ones
             
-            Respond in JSON format with these fields:
-            - exists: boolean (true if the guideline already exists in some form)
-            - similar_to: string (the existing similar guideline if exists is true, null if false)
-            - new_guideline: string (a clear, concise new guideline if exists is false, null if true)
-            
-            The new guideline should be in a similar format to the existing ones - brief and actionable.
+            DO NOT include any explanations or additional text outside the JSON structure.
             """
 
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=500,
-                top_p=1,
-            )
-            
-            result = json.loads(response.choices[0].message.content)
-            return result
+            while retry_count < max_retries:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": "You are a JSON-response code review assistant. Always respond with valid JSON only."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.1,  # Lower temperature for more consistent formatting
+                        max_tokens=500,
+                        top_p=1,
+                    )
+                    
+                    logging.info(f"API Response: {response}")
+                    response_text = response.choices[0].message.content.strip()
+                    
+                    # Try to clean the response if it contains markdown code blocks
+                    if response_text.startswith("```json"):
+                        response_text = response_text.replace("```json", "").replace("```", "").strip()
+                    elif response_text.startswith("```"):
+                        response_text = response_text.replace("```", "").strip()
+                    
+                    result = json.loads(response_text)
+                    
+                    # Validate the expected keys exist
+                    required_keys = {'exists', 'similar_to', 'new_guideline'}
+                    if not all(key in result for key in required_keys):
+                        raise ValueError("Response missing required keys")
+                    
+                    logging.info(f"Parsed Result: {result}")
+                    return result
+                
+                except json.JSONDecodeError as e:
+                    logging.warning(f"Attempt {retry_count + 1} failed to parse JSON: {e}")
+                    retry_count += 1
+                    if retry_count == max_retries:
+                        raise Exception("Maximum retries reached - could not get valid JSON response")
+                except ValueError as e:
+                    logging.warning(f"Attempt {retry_count + 1} had invalid response structure: {e}")
+                    retry_count += 1
+                    if retry_count == max_retries:
+                        raise Exception("Maximum retries reached - could not get valid response structure")
 
         except Exception as e:
             logging.error(f"Failed to check guideline existence: {e}")
