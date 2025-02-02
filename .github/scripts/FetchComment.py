@@ -21,6 +21,12 @@ class FetchComments:
         self.model = model
         self.github_owner = github_owner
         self.github_repo = github_repo
+        self.category_id = category_id  # Store category ID for discussions
+        self.graphql_url = "https://api.github.com/graphql"
+        self.headers = {
+            "Authorization": f"Bearer {self.github_token}",
+            "Content-Type": "application/json"
+        }
 
     def get_all_pull_request_comments(self) -> List[Dict[str, str | int]]:
         """
@@ -85,37 +91,55 @@ class FetchComments:
         return response.choices[0].message.content.strip()
 
     def post_to_discussions(self, guidelines: str):
-        """
-        Posts the generated guidelines to the GitHub Discussions section.
-        If a discussion already exists with a relevant title, it updates it.
-        Otherwise, it creates a new discussion.
-        """
-        try:
-            repository = self.github.get_repo(f"{self.github_owner}/{self.github_repo}")
-            discussions = repository.get_discussions()
-            
-            # Check if a "Coding Guidelines" discussion already exists
-            existing_discussion = None
-            for discussion in discussions:
-                if "Coding Guidelines" in discussion.title:
-                    existing_discussion = discussion
-                    break
+            """
+            Posts the generated guidelines to GitHub Discussions using GraphQL API.
+            """
+            mutation = """
+            mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+            createDiscussion(input: {repositoryId: $repositoryId, categoryId: $categoryId, title: $title, body: $body}) {
+                discussion {
+                id
+                url
+                }
+            }
+            }
+            """
 
-            if existing_discussion:
-                logging.info("Updating existing Coding Guidelines discussion...")
-                existing_discussion.edit(body=guidelines)
+            # Fetch repository ID
+            repo_query = f"""
+            {{
+            repository(owner: "{self.github_owner}", name: "{self.github_repo}") {{
+                id
+            }}
+            }}
+            """
+
+            response = requests.post(self.graphql_url, headers=self.headers, json={"query": repo_query})
+            repo_data = response.json()
+
+            if "errors" in repo_data:
+                logging.error(f"Failed to fetch repository ID: {repo_data['errors']}")
+                return
+
+            repository_id = repo_data["data"]["repository"]["id"]
+
+            # Create the discussion
+            variables = {
+                "repositoryId": repository_id,
+                "categoryId": self.category_id,
+                "title": "Coding Guidelines",
+                "body": guidelines
+            }
+
+            response = requests.post(self.graphql_url, headers=self.headers, json={"query": mutation, "variables": variables})
+            discussion_data = response.json()
+
+            if "errors" in discussion_data:
+                logging.error(f"Failed to create discussion: {discussion_data['errors']}")
             else:
-                logging.info("Creating a new Coding Guidelines discussion...")
-                repository.create_discussion(
-                    title="Coding Guidelines",
-                    body=guidelines,
-                    category_id="DIC_kwDOLcf9Ac4Cmjfq"  # Replace with the appropriate category ID
-                )
-            
-            logging.info("Successfully updated GitHub Discussions.")
-        
-        except GithubException as e:
-            logging.error(f"Failed to post to GitHub Discussions: {e}")
+                discussion_url = discussion_data["data"]["createDiscussion"]["discussion"]["url"]
+                logging.info(f"Discussion created successfully: {discussion_url}")
+
 
 
 if __name__ == "__main__":
@@ -125,6 +149,7 @@ if __name__ == "__main__":
         groq_api_key = os.environ.get("GROQ_API_KEY")
         github_owner = os.environ.get("GITHUB_OWNER")
         github_repo = os.environ.get("GITHUB_REPO")
+        category_id = "DIC_kwDOLcf9Ac4Cmjfq"
         logging.info(f"github token:{github_token} github owner: {github_owner} github repo: {github_repo}")
 
         if not all([github_token, groq_api_key, github_owner, github_repo]):
@@ -135,6 +160,7 @@ if __name__ == "__main__":
             groq_api_key=groq_api_key,
             github_owner=github_owner,
             github_repo=github_repo,
+            category_id=category_id,
         )
 
         logging.info("Fetching comments from pull requests...")
