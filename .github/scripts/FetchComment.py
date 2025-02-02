@@ -13,7 +13,7 @@ logging.basicConfig(
 
 class FetchComments:
     def __init__(
-        self, github_token: str, groq_api_key: str, github_owner: str, github_repo: str, model: str = "llama-3.3-70b-versatile"
+        self, github_token: str, groq_api_key: str, github_owner: str, github_repo: str, category_id: str, model: str = "llama-3.3-70b-versatile"
     ):
         self.auth = Auth.Token(github_token)
         self.github = Github(auth=self.auth)
