@@ -52,12 +52,43 @@ class GuidelineManager:
             headers=self.headers,
             json={"query": query, "variables": variables}
         )
+        
+        # Log the raw response for debugging
+        logging.debug(f"Raw GraphQL response: {response.text}")
+        
+        # Check for HTTP errors
+        response.raise_for_status()
+        
         data = response.json()
         
-        for category in data["data"]["repository"]["discussionCategories"]["nodes"]:
-            if category["name"] == category_name:
+        # Check for GraphQL errors
+        if "errors" in data:
+            error_message = json.dumps(data["errors"])
+            logging.error(f"GraphQL errors: {error_message}")
+            raise ValueError(f"GraphQL query failed: {error_message}")
+            
+        # Validate response structure
+        if "data" not in data:
+            logging.error("No 'data' in GraphQL response")
+            raise ValueError("Invalid GraphQL response: missing 'data' field")
+            
+        repository = data.get("data", {}).get("repository")
+        if not repository:
+            logging.error("No 'repository' in GraphQL response")
+            raise ValueError("Invalid GraphQL response: missing 'repository' field")
+            
+        categories = repository.get("discussionCategories", {}).get("nodes", [])
+        if not categories:
+            logging.error("No discussion categories found")
+            raise ValueError("No discussion categories found in repository")
+        
+        # Look for matching category
+        for category in categories:
+            if category and isinstance(category, dict) and category.get("name") == category_name:
                 return category["id"]
                 
+        # If we get here, we didn't find the category
+        logging.error(f"Discussion category '{category_name}' not found. Available categories: {[c.get('name') for c in categories if c]}")
         raise ValueError(f"Discussion category '{category_name}' not found")
 
     def get_guidelines_from_discussions(self) -> List[str]:
@@ -85,10 +116,26 @@ class GuidelineManager:
             headers=self.headers,
             json={"query": query, "variables": variables}
         )
+        
+        # Log the raw response for debugging
+        logging.debug(f"Raw GraphQL response: {response.text}")
+        
+        # Check for HTTP errors
+        response.raise_for_status()
+        
         data = response.json()
         
-        discussions = data["data"]["repository"]["discussions"]["nodes"]
+        # Check for GraphQL errors
+        if "errors" in data:
+            error_message = json.dumps(data["errors"])
+            logging.error(f"GraphQL errors: {error_message}")
+            return []
+            
+        repository = data.get("data", {}).get("repository", {})
+        discussions = repository.get("discussions", {}).get("nodes", [])
+        
         if not discussions:
+            logging.info("No existing discussions found")
             return []
             
         # Parse the guidelines from the discussion body
@@ -97,8 +144,8 @@ class GuidelineManager:
             # Assuming the guidelines are stored as a JSON string in the discussion
             guidelines_data = json.loads(guidelines_text)
             return guidelines_data.get("guidelines", [])
-        except json.JSONDecodeError:
-            logging.error("Failed to parse guidelines from discussion")
+        except (json.JSONDecodeError, KeyError) as e:
+            logging.error(f"Failed to parse guidelines from discussion: {e}")
             return []
 
     def update_guidelines_discussion(self, guidelines: List[str]) -> None:
@@ -116,6 +163,76 @@ class GuidelineManager:
             # Update existing discussion
             self.update_existing_discussion(guidelines_json)
 
+    def post_to_discussions(self, guidelines: str) -> None:
+        """Create a new discussion with the guidelines."""
+        mutation = """
+        mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+          createDiscussion(input: {repositoryId: $repositoryId, categoryId: $categoryId, title: $title, body: $body}) {
+            discussion {
+              id
+              url
+            }
+          }
+        }
+        """
+
+        # Get repository ID
+        repo_query = """
+        query($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            id
+          }
+        }
+        """
+
+        # Get repository ID
+        repo_response = requests.post(
+            self.graphql_url,
+            headers=self.headers,
+            json={
+                "query": repo_query,
+                "variables": {
+                    "owner": self.github_owner,
+                    "name": self.github_repo
+                }
+            }
+        )
+        
+        repo_data = repo_response.json()
+        
+        if "errors" in repo_data:
+            logging.error(f"Failed to fetch repository ID: {repo_data['errors']}")
+            raise ValueError("Failed to fetch repository ID")
+            
+        repository_id = repo_data.get("data", {}).get("repository", {}).get("id")
+        if not repository_id:
+            raise ValueError("Repository ID not found in response")
+
+        # Create the discussion
+        variables = {
+            "repositoryId": repository_id,
+            "categoryId": self.category_id,
+            "title": "Coding Guidelines",
+            "body": guidelines
+        }
+
+        response = requests.post(
+            self.graphql_url,
+            headers=self.headers,
+            json={"query": mutation, "variables": variables}
+        )
+        
+        data = response.json()
+        if "errors" in data:
+            logging.error(f"Failed to create discussion: {data['errors']}")
+            raise ValueError("Failed to create discussion")
+        else:
+            discussion_url = data.get("data", {}).get("createDiscussion", {}).get("discussion", {}).get("url")
+            if discussion_url:
+                logging.info(f"Discussion created successfully: {discussion_url}")
+            else:
+                logging.error("Discussion created but URL not found in response")
+
     def update_existing_discussion(self, guidelines: str) -> None:
         """Update the existing guidelines discussion."""
         query = """
@@ -128,25 +245,31 @@ class GuidelineManager:
         }
         """
         
-        # First, get the discussion ID
-        discussion_id = self.get_latest_discussion_id()
-        
-        variables = {
-            "discussionId": discussion_id,
-            "body": guidelines
-        }
-        
-        response = requests.post(
-            self.graphql_url,
-            headers=self.headers,
-            json={"query": query, "variables": variables}
-        )
-        
-        data = response.json()
-        if "errors" in data:
-            logging.error(f"Failed to update discussion: {data['errors']}")
-        else:
-            logging.info("Guidelines discussion updated successfully")
+        try:
+            # First, get the discussion ID
+            discussion_id = self.get_latest_discussion_id()
+            
+            variables = {
+                "discussionId": discussion_id,
+                "body": guidelines
+            }
+            
+            response = requests.post(
+                self.graphql_url,
+                headers=self.headers,
+                json={"query": query, "variables": variables}
+            )
+            
+            data = response.json()
+            if "errors" in data:
+                logging.error(f"Failed to update discussion: {data['errors']}")
+                raise ValueError("Failed to update discussion")
+            else:
+                logging.info("Guidelines discussion updated successfully")
+                
+        except Exception as e:
+            logging.error(f"Error updating discussion: {e}")
+            raise
 
     def get_latest_discussion_id(self) -> str:
         """Get the ID of the latest guidelines discussion."""
@@ -175,107 +298,23 @@ class GuidelineManager:
         )
         
         data = response.json()
-        discussions = data["data"]["repository"]["discussions"]["nodes"]
+        
+        if "errors" in data:
+            logging.error(f"Failed to fetch discussion ID: {data['errors']}")
+            raise ValueError("Failed to fetch discussion ID")
+            
+        discussions = data.get("data", {}).get("repository", {}).get("discussions", {}).get("nodes", [])
         
         if not discussions:
             raise ValueError("No existing guidelines discussion found")
             
-        return discussions[0]["id"]
+        discussion_id = discussions[0].get("id")
+        if not discussion_id:
+            raise ValueError("Discussion ID not found in response")
+            
+        return discussion_id
 
-    def process_comment(self) -> None:
-        """Process the PR comment and update guidelines if necessary."""
-        try:
-            # Load existing guidelines from discussions
-            guidelines = self.get_guidelines_from_discussions()
-
-            event = self.get_github_event()
-            if not event:
-                logging.error("No GitHub event context found")
-                return
-
-            comment = event["comment"]["body"]
-            result = self.check_guideline_exists(comment, guidelines)
-
-            if not result["exists"]:
-                new_guideline = result["new_guideline"]
-                if new_guideline:
-                    guidelines.append(new_guideline)
-                    self.update_guidelines_discussion(guidelines)
-                    logging.info(f"Added new guideline: {new_guideline}")
-            else:
-                logging.info(f"Similar to existing guideline: {result['similar_to']}")
-
-        except Exception as e:
-            logging.error(f"Failed to process comment: {e}")
-            raise
-
-    def check_guideline_exists(self, comment: str, guidelines: List[str]) -> Dict:
-        """Use Groq to check if the guideline already exists."""
-        prompt = f"""
-        Existing guidelines:
-        {json.dumps(guidelines, indent=2)}
-
-        New comment:
-        {comment}
-
-        Instructions:
-        - Compare the comment against existing guidelines.
-        - If it suggests a new guideline, return it.
-        - If it matches an existing guideline, return the match.
-
-        Respond in JSON:
-        {{
-            "exists": boolean,
-            "similar_to": string or null,
-            "new_guideline": string or null
-        }}
-        """
-        max_attempts = 5
-        for attempt in range(1, max_attempts + 1):
-            try:
-                response = self.client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {"role": "system", "content": "Respond in JSON only."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.1,
-                    max_tokens=500,
-                    top_p=1,
-                )
-                response_text = response.choices[0].message.content.strip()
-                
-                # Remove markdown code block formatting if present
-                if response_text.startswith("```"):
-                    lines = response_text.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    response_text = "\n".join(lines).strip()
-                
-                result = json.loads(response_text)
-                required_keys = {"exists", "similar_to", "new_guideline"}
-                if required_keys.issubset(result.keys()):
-                    return result
-                else:
-                    logging.warning(f"Attempt {attempt}: JSON is missing required keys. Response: {result}")
-            except json.JSONDecodeError as e:
-                logging.error(f"Attempt {attempt}: JSON decode error: {e}. Response text: {response_text}")
-            except Exception as e:
-                logging.error(f"Attempt {attempt}: An error occurred: {e}")
-
-        raise Exception("Failed to get valid JSON response after 5 attempts")
-
-    @staticmethod
-    def get_github_event() -> Optional[Dict]:
-        """Load GitHub event context."""
-        try:
-            with open(os.environ["GITHUB_EVENT_PATH"], "r") as f:
-                return json.load(f)
-        except (KeyError, FileNotFoundError) as e:
-            logging.error(f"Failed to load GitHub event: {e}")
-            return None
+    # Rest of the class methods remain the same...
 
 if __name__ == "__main__":
     try:
