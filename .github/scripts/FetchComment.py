@@ -24,7 +24,7 @@ class FetchComments:
         self.category_id = category_id  # Store category ID for discussions
         self.graphql_url = "https://api.github.com/graphql"
         self.headers = {
-            "Authorization": f"Bearer {self.github_token}",
+            "Authorization": f"Bearer {github_token}",
             "Content-Type": "application/json"
         }
 
