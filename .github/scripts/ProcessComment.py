@@ -214,7 +214,73 @@ class GuidelineManager:
             logging.error(f"Failed to process comment: {e}")
             raise
 
-    # Rest of the class methods remain the same...
+    def check_guideline_exists(self, comment: str, guidelines: List[str]) -> Dict:
+        """Use Groq to check if the guideline already exists."""
+        prompt = f"""
+        Existing guidelines:
+        {json.dumps(guidelines, indent=2)}
+
+        New comment:
+        {comment}
+
+        Instructions:
+        - Compare the comment against existing guidelines.
+        - If it suggests a new guideline, return it.
+        - If it matches an existing guideline, return the match.
+
+        Respond in JSON:
+        {{
+            "exists": boolean,
+            "similar_to": string or null,
+            "new_guideline": string or null
+        }}
+        """
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": "Respond in JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=500,
+                    top_p=1,
+                )
+                response_text = response.choices[0].message.content.strip()
+                
+                if response_text.startswith("```"):
+                    lines = response_text.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    response_text = "\n".join(lines).strip()
+                
+                result = json.loads(response_text)
+                required_keys = {"exists", "similar_to", "new_guideline"}
+                if required_keys.issubset(result.keys()):
+                    return result
+                else:
+                    logging.warning(f"Attempt {attempt}: JSON is missing required keys. Response: {result}")
+            except json.JSONDecodeError as e:
+                logging.error(f"Attempt {attempt}: JSON decode error: {e}. Response text: {response_text}")
+            except Exception as e:
+                logging.error(f"Attempt {attempt}: An error occurred: {e}")
+
+        raise Exception("Failed to get valid JSON response after 5 attempts")
+
+    @staticmethod
+    def get_github_event() -> Optional[Dict]:
+        """Load GitHub event context."""
+        try:
+            with open(os.environ["GITHUB_EVENT_PATH"], "r") as f:
+                return json.load(f)
+        except (KeyError, FileNotFoundError) as e:
+            logging.error(f"Failed to load GitHub event: {e}")
+            return None
+
 
 if __name__ == "__main__":
     try:
