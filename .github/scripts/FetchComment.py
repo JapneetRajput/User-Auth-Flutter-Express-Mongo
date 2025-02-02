@@ -4,6 +4,7 @@ from github.GithubException import GithubException
 from typing import Optional, List, Dict
 import logging
 import os
+import requests
 
 # Configure logging
 logging.basicConfig(
