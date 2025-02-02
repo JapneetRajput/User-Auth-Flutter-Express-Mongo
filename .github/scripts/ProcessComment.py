@@ -1,77 +1,192 @@
 from github import Github, Auth
 from groq import Client
-from github.GithubException import GithubException
+import requests
 import json
 import os
-import subprocess
 import logging
-from pathlib import Path
+from typing import List, Dict, Optional
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class GuidelineManager:
-    def __init__(self, github_token, groq_api_key, github_owner, github_repo):
+    def __init__(self, github_token: str, groq_api_key: str, github_owner: str, github_repo: str):
         self.auth = Auth.Token(github_token)
         self.github = Github(auth=self.auth)
         self.client = Client(api_key=groq_api_key)
         self.github_owner = github_owner
         self.github_repo = github_repo
         self.repo = self.github.get_repo(f"{github_owner}/{github_repo}")
+        
+        # GraphQL settings
+        self.graphql_url = "https://api.github.com/graphql"
+        self.headers = {
+            "Authorization": f"Bearer {github_token}",
+            "Accept": "application/vnd.github.v4+json"
+        }
+        
+        # Category ID for coding guidelines discussions
+        self.category_id = self.get_discussion_category_id("Coding Guidelines")
+        
+    def get_discussion_category_id(self, category_name: str) -> str:
+        """Fetch the discussion category ID for the given category name."""
+        query = """
+        query($owner: String!, $repo: String!) {
+          repository(owner: $owner, name: $repo) {
+            discussionCategories(first: 10) {
+              nodes {
+                id
+                name
+              }
+            }
+          }
+        }
+        """
+        
+        variables = {
+            "owner": self.github_owner,
+            "repo": self.github_repo
+        }
+        
+        response = requests.post(
+            self.graphql_url,
+            headers=self.headers,
+            json={"query": query, "variables": variables}
+        )
+        data = response.json()
+        
+        for category in data["data"]["repository"]["discussionCategories"]["nodes"]:
+            if category["name"] == category_name:
+                return category["id"]
+                
+        raise ValueError(f"Discussion category '{category_name}' not found")
 
-        # Branch & File Details
-        self.guidelines_branch = "guidelines"
-        self.guidelines_file = Path(".github/guidelines/guidelines.json")
-        self.local_repo_path = Path("repo")
+    def get_guidelines_from_discussions(self) -> List[str]:
+        """Load existing guidelines from the GitHub Discussions."""
+        query = """
+        query($owner: String!, $repo: String!, $category: String!) {
+          repository(owner: $owner, name: $repo) {
+            discussions(first: 1, categoryId: $category, orderBy: {field: CREATED_AT, direction: DESC}) {
+              nodes {
+                body
+              }
+            }
+          }
+        }
+        """
+        
+        variables = {
+            "owner": self.github_owner,
+            "repo": self.github_repo,
+            "category": self.category_id
+        }
+        
+        response = requests.post(
+            self.graphql_url,
+            headers=self.headers,
+            json={"query": query, "variables": variables}
+        )
+        data = response.json()
+        
+        discussions = data["data"]["repository"]["discussions"]["nodes"]
+        if not discussions:
+            return []
+            
+        # Parse the guidelines from the discussion body
+        try:
+            guidelines_text = discussions[0]["body"]
+            # Assuming the guidelines are stored as a JSON string in the discussion
+            guidelines_data = json.loads(guidelines_text)
+            return guidelines_data.get("guidelines", [])
+        except json.JSONDecodeError:
+            logging.error("Failed to parse guidelines from discussion")
+            return []
 
-    def clone_guidelines_branch(self):
-        """Clone the guidelines branch."""
-        logging.info(f"Cloning the {self.guidelines_branch} branch...")
-        if self.local_repo_path.exists():
-            subprocess.run(["rm", "-rf", str(self.local_repo_path)], check=True)
+    def update_guidelines_discussion(self, guidelines: List[str]) -> None:
+        """Update the guidelines in GitHub Discussions."""
+        # First, check if a discussion exists
+        existing_guidelines = self.get_guidelines_from_discussions()
+        
+        # Prepare the guidelines JSON
+        guidelines_json = json.dumps({"guidelines": guidelines}, indent=2)
+        
+        if not existing_guidelines:
+            # Create new discussion if none exists
+            self.post_to_discussions(guidelines_json)
+        else:
+            # Update existing discussion
+            self.update_existing_discussion(guidelines_json)
 
-        # Use the x-access-token format for the URL
-        repo_url = f"https://x-access-token:{os.environ['GITHUB_TOKEN']}@github.com/{self.github_owner}/{self.github_repo}.git"
-        subprocess.run(["git", "clone", "--branch", self.guidelines_branch, repo_url, str(self.local_repo_path)], check=True)
+    def update_existing_discussion(self, guidelines: str) -> None:
+        """Update the existing guidelines discussion."""
+        query = """
+        mutation($discussionId: ID!, $body: String!) {
+          updateDiscussion(input: {discussionId: $discussionId, body: $body}) {
+            discussion {
+              url
+            }
+          }
+        }
+        """
+        
+        # First, get the discussion ID
+        discussion_id = self.get_latest_discussion_id()
+        
+        variables = {
+            "discussionId": discussion_id,
+            "body": guidelines
+        }
+        
+        response = requests.post(
+            self.graphql_url,
+            headers=self.headers,
+            json={"query": query, "variables": variables}
+        )
+        
+        data = response.json()
+        if "errors" in data:
+            logging.error(f"Failed to update discussion: {data['errors']}")
+        else:
+            logging.info("Guidelines discussion updated successfully")
 
-    def load_guidelines(self):
-        """Load existing guidelines from the JSON file."""
-        guidelines_path = self.local_repo_path / self.guidelines_file
-        if not guidelines_path.exists():
-            logging.info("No existing guidelines found, initializing an empty list.")
-            return []  # Return an empty list if file doesn't exist
+    def get_latest_discussion_id(self) -> str:
+        """Get the ID of the latest guidelines discussion."""
+        query = """
+        query($owner: String!, $repo: String!, $category: String!) {
+          repository(owner: $owner, name: $repo) {
+            discussions(first: 1, categoryId: $category, orderBy: {field: CREATED_AT, direction: DESC}) {
+              nodes {
+                id
+              }
+            }
+          }
+        }
+        """
+        
+        variables = {
+            "owner": self.github_owner,
+            "repo": self.github_repo,
+            "category": self.category_id
+        }
+        
+        response = requests.post(
+            self.graphql_url,
+            headers=self.headers,
+            json={"query": query, "variables": variables}
+        )
+        
+        data = response.json()
+        discussions = data["data"]["repository"]["discussions"]["nodes"]
+        
+        if not discussions:
+            raise ValueError("No existing guidelines discussion found")
+            
+        return discussions[0]["id"]
 
-        with open(guidelines_path, "r") as f:
-            data = json.load(f)
-            # If data is a dictionary with a 'guidelines' key, extract the list.
-            if isinstance(data, dict) and "guidelines" in data:
-                return data["guidelines"]
-            # If data is already a list, return it.
-            elif isinstance(data, list):
-                return data
-            else:
-                logging.info("Unexpected data format for guidelines. Initializing empty list.")
-                return []
-
-    def save_guidelines(self, guidelines):
-        """Save the updated guidelines and push them back to the branch."""
-        guidelines_path = self.local_repo_path / self.guidelines_file
-        guidelines_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Save the guidelines as a dictionary with key "guidelines"
-        with open(guidelines_path, "w") as f:
-            json.dump({"guidelines": guidelines}, f, indent=4)
-
-        logging.info("Committing and pushing updates to the guidelines branch...")
-        subprocess.run(["git", "-C", str(self.local_repo_path), "add", str(self.guidelines_file)], check=True)
-        subprocess.run(["git", "-C", str(self.local_repo_path), "commit", "-m", "Update guidelines based on PR comment"], check=True)
-        subprocess.run(["git", "-C", str(self.local_repo_path), "push"], check=True)
-
-    def process_comment(self):
+    def process_comment(self) -> None:
         """Process the PR comment and update guidelines if necessary."""
         try:
-            self.clone_guidelines_branch()
-            guidelines = self.load_guidelines()
+            # Load existing guidelines from discussions
+            guidelines = self.get_guidelines_from_discussions()
 
             event = self.get_github_event()
             if not event:
@@ -85,7 +200,7 @@ class GuidelineManager:
                 new_guideline = result["new_guideline"]
                 if new_guideline:
                     guidelines.append(new_guideline)
-                    self.save_guidelines(guidelines)
+                    self.update_guidelines_discussion(guidelines)
                     logging.info(f"Added new guideline: {new_guideline}")
             else:
                 logging.info(f"Similar to existing guideline: {result['similar_to']}")
@@ -94,8 +209,8 @@ class GuidelineManager:
             logging.error(f"Failed to process comment: {e}")
             raise
 
-    def check_guideline_exists(self, comment, guidelines):
-        """Use AI to check if the guideline already exists, retrying up to 5 times if needed."""
+    def check_guideline_exists(self, comment: str, guidelines: List[str]) -> Dict:
+        """Use Groq to check if the guideline already exists."""
         prompt = f"""
         Existing guidelines:
         {json.dumps(guidelines, indent=2)}
@@ -132,7 +247,6 @@ class GuidelineManager:
                 
                 # Remove markdown code block formatting if present
                 if response_text.startswith("```"):
-                    # Split into lines and remove the first and last lines if they're code block markers
                     lines = response_text.splitlines()
                     if lines[0].startswith("```"):
                         lines = lines[1:]
@@ -141,21 +255,20 @@ class GuidelineManager:
                     response_text = "\n".join(lines).strip()
                 
                 result = json.loads(response_text)
-                # Validate that the required keys exist
                 required_keys = {"exists", "similar_to", "new_guideline"}
                 if required_keys.issubset(result.keys()):
                     return result
                 else:
-                    print(f"Attempt {attempt}: JSON is missing required keys. Response: {result}")
+                    logging.warning(f"Attempt {attempt}: JSON is missing required keys. Response: {result}")
             except json.JSONDecodeError as e:
-                print(f"Attempt {attempt}: JSON decode error: {e}. Response text: {response_text}")
+                logging.error(f"Attempt {attempt}: JSON decode error: {e}. Response text: {response_text}")
             except Exception as e:
-                print(f"Attempt {attempt}: An error occurred: {e}")
+                logging.error(f"Attempt {attempt}: An error occurred: {e}")
 
         raise Exception("Failed to get valid JSON response after 5 attempts")
 
     @staticmethod
-    def get_github_event():
+    def get_github_event() -> Optional[Dict]:
         """Load GitHub event context."""
         try:
             with open(os.environ["GITHUB_EVENT_PATH"], "r") as f:
