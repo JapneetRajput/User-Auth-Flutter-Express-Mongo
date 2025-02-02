@@ -2,6 +2,58 @@ import User from "../models/users.js";
 import nodemailer from "nodemailer";
 import randomstring from "randomstring";
 
+// Function to send OTP
+export const sendOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+    // Generate OTP
+    const OTP = randomstring.generate(5);
+
+    const user = await User.findOne({ email });
+
+    let isNewUser = false;
+
+    if (user) {
+      if (user.OTP == undefined) {
+        user.OTP = OTP;
+        await user.save();
+      }
+    } else {
+      await User.create({ email, OTP });
+      isNewUser = true;
+    }
+
+    // Send OTP via email
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "pampermee.dev@gmail.com", // Gmail email address
+        pass: "afqu crly mgbl pqvy", // Gmail password
+      },
+    });
+
+    const mailOptions = {
+      from: "pampermee.dev@gmail.com",
+      to: email,
+      subject: "OTP for verification",
+      text: `Your OTP is: ${OTP}`,
+    };
+
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        console.log(error);
+        res.status(500).send("Failed to send OTP : ", error.message);
+      } else {
+        console.log("Email sent: " + info.response);
+        res.status(200).send({ message: "OTP sent successfully", isNewUser });
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Server error : ", error.message);
+  }
+};
+
 // Function to verify OTP
 export const verifyOTP = async (req, res) => {
   try {

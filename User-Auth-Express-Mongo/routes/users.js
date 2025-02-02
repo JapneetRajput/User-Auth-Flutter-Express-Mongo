@@ -12,6 +12,7 @@ import {
 
 router.post("/create", createUser);
 router.post("/verify-otp", verifyOTP);
+router.post("/send-otp", sendOTP);
 router.post("/update-user-info", updateUserInfo);
 router.get("/:id", getUser);
 
