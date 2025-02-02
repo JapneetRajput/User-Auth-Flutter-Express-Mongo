@@ -6,6 +6,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  discussions: write
 
 jobs:
   fetch-comments-and-generate-guidelines:
