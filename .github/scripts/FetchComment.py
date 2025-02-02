@@ -84,22 +84,38 @@ class FetchComments:
         )
         return response.choices[0].message.content.strip()
 
-    @staticmethod
-    def update_readme(guidelines: str, readme_file: str = "README.md"):
+    def post_to_discussions(self, guidelines: str):
         """
-        Updates the README file with the generated guidelines.
+        Posts the generated guidelines to the GitHub Discussions section.
+        If a discussion already exists with a relevant title, it updates it.
+        Otherwise, it creates a new discussion.
         """
         try:
-            if not os.path.exists(readme_file):
-                raise FileNotFoundError(f"README file not found: {readme_file}")
+            repository = self.github.get_repo(f"{self.github_owner}/{self.github_repo}")
+            discussions = repository.get_discussions()
+            
+            # Check if a "Coding Guidelines" discussion already exists
+            existing_discussion = None
+            for discussion in discussions:
+                if "Coding Guidelines" in discussion.title:
+                    existing_discussion = discussion
+                    break
 
-            with open(readme_file, "a") as readme:
-                readme.write("\n\n## Coding Guidelines\n")
-                readme.write(guidelines)
-            logging.info(f"Guidelines successfully appended to {readme_file}.")
-        except FileNotFoundError as e:
-            logging.error(str(e))
-            raise
+            if existing_discussion:
+                logging.info("Updating existing Coding Guidelines discussion...")
+                existing_discussion.edit(body=guidelines)
+            else:
+                logging.info("Creating a new Coding Guidelines discussion...")
+                repository.create_discussion(
+                    title="Coding Guidelines",
+                    body=guidelines,
+                    category_id="DIC_kwDOLcf9Ac4Cmjfq"  # Replace with the appropriate category ID
+                )
+            
+            logging.info("Successfully updated GitHub Discussions.")
+        
+        except GithubException as e:
+            logging.error(f"Failed to post to GitHub Discussions: {e}")
 
 
 if __name__ == "__main__":
@@ -123,15 +139,13 @@ if __name__ == "__main__":
 
         logging.info("Fetching comments from pull requests...")
         comments = fetch_comments.get_all_pull_request_comments()
-        logging.info(f"Fetched {len(comments)} comments from pull requests.")
-        logging.info(comments)
 
         logging.info("Generating guidelines...")
         guidelines = fetch_comments.generate_guidelines(comments)
 
         logging.info(guidelines)
-        logging.info("Updating README file...")
-        fetch_comments.update_readme(guidelines)
+        logging.info("Posting guidelines to GitHub Discussions...")
+        fetch_comments.post_to_discussions(guidelines)
 
     except Exception as e:
         logging.error(f"An error occurred: {e}")
