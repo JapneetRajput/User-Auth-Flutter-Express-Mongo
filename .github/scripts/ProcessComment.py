@@ -4,7 +4,7 @@ import requests
 import json
 import os
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -23,116 +23,140 @@ class GuidelineManager:
             "Authorization": f"Bearer {github_token}",
             "Accept": "application/vnd.github.v4+json"
         }
+        self.category_id = "DIC_kwDOLM6ads4CZK8E"  # Use your actual category ID here
 
-    def get_repository_id(self) -> str:
-        """Get the GitHub repository ID."""
-        query = f"""
-        {{
-        repository(owner: "{self.github_owner}", name: "{self.github_repo}") {{
-            id
-        }}
-        }}
-        """
-
-        response = requests.post(self.graphql_url, headers=self.headers, json={"query": query})
-        data = response.json()
-
-        if "errors" in data:
-            logging.error(f"Failed to fetch repository ID: {data['errors']}")
-            raise ValueError("Failed to get repository ID")
-
-        return data["data"]["repository"]["id"]
-
-    def find_guidelines_discussion(self) -> Tuple[Optional[str], Optional[List[str]]]:
-        """Find the existing guidelines discussion and return its ID and content."""
-        query = f"""
-        {{
-        repository(owner: "{self.github_owner}", name: "{self.github_repo}") {{
-            discussions(first: 10, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
-            nodes {{
-                id
-                title
+    def load_guidelines(self) -> List[str]:
+        """Load existing guidelines from the discussion."""
+        query = """
+        query($owner: String!, $repo: String!, $categoryId: ID!) {
+          repository(owner: $owner, name: $repo) {
+            discussions(first: 1, categoryId: $categoryId, orderBy: {field: CREATED_AT, direction: DESC}) {
+              nodes {
                 body
-            }}
-            }}
-        }}
-        }}
+              }
+            }
+          }
+        }
         """
-
-        response = requests.post(self.graphql_url, headers=self.headers, json={"query": query})
+        
+        variables = {
+            "owner": self.github_owner,
+            "repo": self.github_repo,
+            "categoryId": self.category_id
+        }
+        
+        response = requests.post(
+            self.graphql_url, 
+            headers=self.headers,
+            json={"query": query, "variables": variables}
+        )
+        
         data = response.json()
+        discussions = data.get("data", {}).get("repository", {}).get("discussions", {}).get("nodes", [])
+        
+        if discussions:
+            try:
+                guidelines_text = discussions[0]["body"]
+                guidelines_data = json.loads(guidelines_text)
+                return guidelines_data.get("guidelines", [])
+            except (json.JSONDecodeError, KeyError, IndexError):
+                return []
+        return []
 
-        if "errors" in data:
-            logging.error(f"Failed to fetch discussions: {data['errors']}")
-            return None, None
-
-        discussions = data["data"]["repository"]["discussions"]["nodes"]
-        for discussion in discussions:
-            if discussion["title"] == "Coding Guidelines":
-                try:
-                    guidelines = json.loads(discussion["body"])
-                    return discussion["id"], guidelines.get("guidelines", [])
-                except json.JSONDecodeError:
-                    logging.warning(f"Found guidelines discussion but couldn't parse JSON: {discussion['body']}")
-                    return discussion["id"], []
-
-        return None, None
-
-    def create_or_update_discussion(self, guidelines: List[str]) -> None:
-        """Create a new discussion or update existing one with guidelines."""
-        discussion_id, existing_guidelines = self.find_guidelines_discussion()
-
-        if discussion_id:
+    def save_guidelines(self, guidelines: List[str]) -> None:
+        """Save guidelines to the discussion."""
+        # First try to get existing discussion ID
+        query = """
+        query($owner: String!, $repo: String!, $categoryId: ID!) {
+          repository(owner: $owner, name: $repo) {
+            discussions(first: 1, categoryId: $categoryId, orderBy: {field: CREATED_AT, direction: DESC}) {
+              nodes {
+                id
+              }
+            }
+          }
+        }
+        """
+        
+        variables = {
+            "owner": self.github_owner,
+            "repo": self.github_repo,
+            "categoryId": self.category_id
+        }
+        
+        response = requests.post(
+            self.graphql_url,
+            headers=self.headers,
+            json={"query": query, "variables": variables}
+        )
+        
+        data = response.json()
+        discussions = data.get("data", {}).get("repository", {}).get("discussions", {}).get("nodes", [])
+        
+        guidelines_json = json.dumps({"guidelines": guidelines}, indent=2)
+        
+        if discussions:
             # Update existing discussion
+            discussion_id = discussions[0]["id"]
             mutation = """
             mutation($discussionId: ID!, $body: String!) {
-                updateDiscussion(input: {discussionId: $discussionId, body: $body}) {
-                    discussion {
-                        url
-                    }
+              updateDiscussion(input: {discussionId: $discussionId, body: $body}) {
+                discussion {
+                  url
                 }
+              }
             }
             """
-            
             variables = {
                 "discussionId": discussion_id,
-                "body": json.dumps({"guidelines": guidelines}, indent=2)
+                "body": guidelines_json
             }
         else:
             # Create new discussion
-            mutation = """
-            mutation($repositoryId: ID!, $title: String!, $body: String!) {
-                createDiscussion(input: {repositoryId: $repositoryId, title: $title, body: $body}) {
-                    discussion {
-                        url
-                    }
-                }
-            }
+            # First get repository ID
+            repo_query = f"""
+            {{
+            repository(owner: "{self.github_owner}", name: "{self.github_repo}") {{
+                id
+            }}
+            }}
             """
             
-            variables = {
-                "repositoryId": self.get_repository_id(),
-                "title": "Coding Guidelines",
-                "body": json.dumps({"guidelines": guidelines}, indent=2)
+            repo_response = requests.post(self.graphql_url, headers=self.headers, json={"query": repo_query})
+            repo_data = repo_response.json()
+            repository_id = repo_data["data"]["repository"]["id"]
+            
+            mutation = """
+            mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
+              createDiscussion(input: {repositoryId: $repositoryId, categoryId: $categoryId, title: $title, body: $body}) {
+                discussion {
+                  url
+                }
+              }
             }
-
+            """
+            variables = {
+                "repositoryId": repository_id,
+                "categoryId": self.category_id,
+                "title": "Coding Guidelines",
+                "body": guidelines_json
+            }
+        
         response = requests.post(
             self.graphql_url,
             headers=self.headers,
             json={"query": mutation, "variables": variables}
         )
         
-        data = response.json()
-        if "errors" in data:
-            logging.error(f"Failed to {'update' if discussion_id else 'create'} discussion: {data['errors']}")
-            raise ValueError(f"Failed to {'update' if discussion_id else 'create'} discussion")
+        if "errors" in response.json():
+            logging.error(f"Failed to save guidelines: {response.json()['errors']}")
+            raise Exception("Failed to save guidelines")
 
     def process_comment(self) -> None:
         """Process the PR comment and update guidelines if necessary."""
         try:
             # Load existing guidelines from discussion
-            _, guidelines = self.find_guidelines_discussion()
-            guidelines = guidelines or []  # Initialize empty list if None
+            guidelines = self.load_guidelines()
 
             event = self.get_github_event()
             if not event:
@@ -146,7 +170,7 @@ class GuidelineManager:
                 new_guideline = result["new_guideline"]
                 if new_guideline:
                     guidelines.append(new_guideline)
-                    self.create_or_update_discussion(guidelines)
+                    self.save_guidelines(guidelines)
                     logging.info(f"Added new guideline: {new_guideline}")
             else:
                 logging.info(f"Similar to existing guideline: {result['similar_to']}")
