@@ -25,7 +25,7 @@ class GuidelineManager:
         }
         
         # Category ID for coding guidelines discussions
-        self.category_id = self.get_discussion_category_id("Coding Guidelines")
+        self.category_id = "DIC_kwDOLcf9Ac4Cmjfq"
         
     def get_discussion_category_id(self, category_name: str) -> str:
         """Fetch the discussion category ID for the given category name."""
